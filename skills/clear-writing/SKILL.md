@@ -1,6 +1,6 @@
 ---
 name: clear-writing
-description: Make any writing clear, direct, and human. Must always apply.
+description: Make any writing clear, direct, and human. ALWAYS USE IT, before writing any prose in any language, including chat replies, explanations, docs, and summaries.
 ---
 
 # Clear writing
