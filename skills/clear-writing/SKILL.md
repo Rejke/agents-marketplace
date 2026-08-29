@@ -1,6 +1,6 @@
 ---
 name: clear-writing
-description: Write and edit prose that reads clear, direct, and human. Use whenever asked to draft, rewrite, edit, review, polish, copyedit, simplify, humanize, or unslop any text: essays, posts, emails, documentation, product copy, scripts, speeches, README files, UI copy, commit messages. Combines Orwell's six rules, ASD-STE100 plain technical English, and an AI-tell detector in one pass. Apply to any writing task, even when the user does not name a style.
+description: Make any writing clear, direct, and human. Must always apply.
 ---
 
 # Clear writing
