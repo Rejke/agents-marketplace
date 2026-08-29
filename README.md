@@ -28,7 +28,7 @@ It covers:
 
 - Orwell's six rules from "Politics and the English Language"
 - An ASD-STE100 Simplified Technical English baseline for docs and procedures
-- A 26-point AI-tell checklist (puffery, em dashes, "not just X, but Y", synonym cycling, chatbot phrases, abstract metaphor nouns)
+- An AI-tell checklist (puffery, em dashes, "not just X, but Y", synonym cycling, chatbot phrases, abstract metaphor nouns)
 - Voice rules so edited text still reads like a person wrote it
 
 If you had `orwell-writing` or `unslop` installed, remove them after installing this one. Keeping them alongside recreates the conflict this skill exists to fix.
