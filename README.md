@@ -1,6 +1,6 @@
 # agents-marketplace
 
-Agent skills by [@Rejke](https://github.com/Rejke), installable with the [skills CLI](https://skills.sh).
+Agent skills by [@Rejke](https://github.com/Rejke). Install them with the [skills CLI](https://skills.sh).
 
 ## Install
 
@@ -16,19 +16,19 @@ Or with npm:
 npx skills add Rejke/agents-marketplace
 ```
 
-The CLI asks which skills to install and which agents (Claude Code, Cursor, Codex, and others) to install them into.
+The CLI asks which skills to install and which agents to install them into (Claude Code, Cursor, Codex, and others).
 
 ## Skills
 
 ### clear-writing
 
-One skill that replaces the separate `orwell-writing` and `unslop` skills. Run separately, the two pull in opposite directions: Orwell and STE compress text until it turns sterile, and the AI-tell detector flags sterile text as machine-made. The merged skill resolves this with an explicit precedence order and two modes: an STE pass for technical prose that readers follow, and a voice pass for prose that readers read.
+Replaces the `orwell-writing` and `unslop` skills. Run separately, they pull in opposite directions. Orwell and STE compress text until it turns sterile, and the AI-tell detector flags sterile text as machine-made. This skill merges them, sets a precedence order, and splits the work into two modes. Technical mode is an STE pass for text the reader follows, such as docs and procedures. Voice mode is for text the reader reads, such as essays and emails.
 
 It covers:
 
 - Orwell's six rules from "Politics and the English Language"
-- An ASD-STE100 Simplified Technical English baseline for docs and procedures
+- A baseline from ASD-STE100 Simplified Technical English
 - An AI-tell checklist (puffery, em dashes, "not just X, but Y", synonym cycling, chatbot phrases, abstract metaphor nouns)
-- Voice rules so edited text still reads like a person wrote it
+- Voice rules so the edited text still reads like a person wrote it
 
-If you had `orwell-writing` or `unslop` installed, remove them after installing this one. Keeping them alongside recreates the conflict this skill exists to fix.
+If you had `orwell-writing` or `unslop` installed, remove them after you install this one. Keeping them recreates the conflict this skill fixes.
