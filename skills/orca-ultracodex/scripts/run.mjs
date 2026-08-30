@@ -262,6 +262,9 @@ class Run {
     this.worktreeInfo = null
     this.createdWorktrees = []
     this.openTerminals = new Set()
+    // One banner line always lands on stderr before any work, so a run that
+    // produces nothing is distinguishable from a run that never started.
+    this.say(`orca-ultracodex ${this.id}${this.echo ? ' (echo mode)' : ''} | run dir: ${this.dir}`)
   }
 
   journal(event) {
@@ -509,8 +512,18 @@ async function runScript(file, runnerOpts, callerArgs, depth = 0) {
 
 // ---------------------------------------------------------------- main
 
-const invokedDirectly =
-  process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+// argv[1] can be a symlink (the standard install layout) while Node's ESM
+// loader canonicalizes import.meta.url to the realpath, so compare realpath to
+// realpath; a path-string comparison turns a symlinked invocation into a
+// silent exit-0 no-op.
+let invokedDirectly = false
+try {
+  invokedDirectly =
+    !!process.argv[1] &&
+    fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))
+} catch {
+  // unreadable argv[1] means this file was imported, not executed
+}
 if (invokedDirectly) {
   try {
     const opts = parseArgv(process.argv.slice(2))
