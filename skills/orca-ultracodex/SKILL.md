@@ -69,8 +69,10 @@ node <this skill's directory>/scripts/run.mjs run <script.js> \
 - The run directory (printed at the end) holds `journal.jsonl`, `prompts/`,
   `reports/`, and `result.json`. Read the journal before diagnosing a surprising
   result.
-- The runner dismisses first-run trust dialogs itself; codex and claude each show one
-  per fresh directory, so they recur for every new worktree.
+- The kickoff line rides on the spawn command itself, so there is no post-boot send
+  to double-submit. The runner pre-trusts each codex working directory in
+  `~/.codex/config.toml` before spawning there and sweeps any residual first-run
+  dialog (claude shows one per fresh directory).
 - Terminals close as each agent settles. A failed or timed-out agent's terminal stays
   open for inspection, and its handle is in the journal and the closing summary. The
   human can watch or type into any live agent tab in Orca.

@@ -16,6 +16,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 
@@ -196,6 +197,30 @@ function assemblePrompt({ prompt, schema, reportPath }) {
   return blocks.join('\n\n')
 }
 
+// ------------------------------------------------------------ codex pre-trust
+
+// codex shows a per-directory trust dialog even under
+// --dangerously-bypass-approvals-and-sandbox, and it recurs for every fresh
+// worktree. Trusting the directory in config.toml ahead of the spawn means no
+// modal ever blocks the kickoff. Writes are serialized in-process; a duplicate
+// [projects] table would be a TOML parse error for codex, so the section is
+// appended only when its exact header is absent.
+const trustQueue = { tail: Promise.resolve(false) }
+
+export function ensureCodexTrust(workdir, configPath = path.join(os.homedir(), '.codex', 'config.toml')) {
+  trustQueue.tail = trustQueue.tail.then(() => {
+    const header = `[projects."${workdir}"]`
+    let text = ''
+    try { text = fs.readFileSync(configPath, 'utf8') } catch {}
+    if (text.includes(header)) return false
+    fs.mkdirSync(path.dirname(configPath), { recursive: true })
+    const separator = text.length === 0 ? '' : text.endsWith('\n') ? '\n' : '\n\n'
+    fs.appendFileSync(configPath, `${separator}${header}\ntrust_level = "trusted"\n`)
+    return true
+  })
+  return trustQueue.tail
+}
+
 // ------------------------------------------------------- minimal schema check
 
 function validateSchema(value, schema, at = '$', errors = []) {
@@ -355,54 +380,39 @@ class Run {
       this.journal({ kind: 'worktree_created', id, worktree: wtId })
     }
 
-    // Spawn the agent as a raw console command in a plain Orca terminal.
+    // Spawn the agent as a raw console command in a plain Orca terminal, with
+    // the kickoff line riding as a positional argument on the command itself.
+    // No boot-wait and no send-after-boot means nothing to double-submit (a
+    // v3-era failure class: one double send once produced two reviewers and
+    // three antislop workers). Pre-trusting the codex workdir first means no
+    // trust dialog blocks the queued kickoff.
+    if (promptPath.includes('"')) throw new Error(`prompt path must not contain quotes: ${promptPath}`)
+    const workdir = worktree ? worktree.split('::')[1] : process.cwd()
+    if (spec.cmd.startsWith('codex') && (await ensureCodexTrust(workdir))) {
+      this.journal({ kind: 'codex_pretrusted', id, workdir })
+    }
     const title = `${this.id} ${id} ${label}`.slice(0, 48)
-    const created = await orca(['terminal', 'create', '--worktree', selector, '--title', title, '--command', spec.cmd])
+    const command = `${spec.cmd} "Read the file ${promptPath} and do exactly what it says."`
+    const created = await orca(['terminal', 'create', '--worktree', selector, '--title', title, '--command', command])
     const handle = findTerminalHandle(created.data)
     if (created.code !== 0 || !handle) throw new Error(`terminal create failed: ${created.raw?.slice(0, 300)}`)
     this.openTerminals.add(handle)
-    this.journal({ kind: 'agent_spawned', id, label, phase, handle, worktree, command: spec.cmd })
+    this.journal({ kind: 'agent_spawned', id, label, phase, handle, worktree, command })
     this.say(`  ▸ ${id} ${label} [${spec.model}${spec.effort ? ' ' + spec.effort : ''}] ${handle}`)
 
-    // Boot in slices, dismissing the first-run trust dialog if one appears
-    // (codex and claude both show one for a fresh directory, and every new
-    // worktree is a fresh directory). The wait can return fast with
-    // satisfied:false, so pace the loop; dismiss with a bare Enter (leaves
-    // nothing in the composer) and at most twice, because the dialog text
-    // lingers in scrollback after it closes.
-    const bootDeadline = Date.now() + 120_000
-    let dismissals = 0
-    for (;;) {
-      const wait = await orca(['terminal', 'wait', '--terminal', handle, '--for', 'tui-idle', '--timeout-ms', '15000'], { timeoutMs: 25_000 })
-      if (wait.code === 0 && !JSON.stringify(wait.data ?? '').includes('"satisfied":false')) break
-      if (Date.now() > bootDeadline) throw new Error(`agent did not reach idle in 120s: ${wait.raw?.slice(0, 200)}`)
-      const tail = await orca(['terminal', 'read', '--terminal', handle, '--limit', '5'])
-      const lastLines = JSON.stringify(tail.data?.result?.terminal?.tail?.slice(-2) ?? '')
-      if (dismissals < 2 && /trust the (contents|files)|Yes, continue|Press enter to continue/i.test(lastLines)) {
-        dismissals += 1
-        this.journal({ kind: 'trust_dialog_dismissed', id, dismissals })
-        await orca(['terminal', 'send', '--terminal', handle, '--text', '', '--enter'])
-        await sleep(3000)
-      }
-      await sleep(2000)
-    }
-    const banner = await orca(['terminal', 'read', '--terminal', handle, '--limit', '60'])
-    if (!JSON.stringify(banner.data ?? '').includes(spec.model)) {
-      this.journal({ kind: 'banner_unproven', id, model: spec.model })
-    }
-    const pointer = `Read the file ${promptPath} and do exactly what it says.`
-    const sent = await orca(['terminal', 'send', '--terminal', handle, '--text', pointer, '--enter'])
-    if (sent.code !== 0) throw new Error(`prompt delivery failed: ${sent.raw?.slice(0, 200)}`)
-
-    // Collect: poll the report file. Once a minute, probe the terminal: a dead
-    // one fails the agent, and an idle one without a report gets a reminder to
-    // write the file (an agent that answered into its chat instead of the file
-    // looks finished while the runner would otherwise wait out the full
-    // timeout). Two ignored reminders fail the agent early.
+    // Collect: poll the report file, probing the terminal at 15s and then once
+    // a minute. A probe fails a dead terminal, sweeps a residual first-run
+    // trust dialog (claude still shows one per fresh directory), checks the
+    // boot banner once, and reminds an idle agent without a report to write
+    // the file (an agent that answered into its chat looks finished while the
+    // runner would otherwise wait out the full timeout). Two ignored reminders
+    // fail the agent early.
     const deadline = Date.now() + this.opts.agentTimeoutMs
     let repairs = 0
     let cycles = 0
     let idleNudges = 0
+    let dismissals = 0
+    let bannerChecked = false
     while (true) {
       if (Date.now() > deadline) {
         this.journal({ kind: 'agent_timeout', id, handle })
@@ -411,17 +421,32 @@ class Run {
       await sleep(3000)
       cycles += 1
       if (!fs.existsSync(reportPath)) {
-        if (cycles % 20 === 0) {
+        if (cycles === 5 || cycles % 20 === 0) {
           // `terminal show` answers ok even for closed terminals; `read` with a
           // live status is the reliable liveness probe.
-          const alive = await orca(['terminal', 'read', '--terminal', handle, '--limit', '1'])
+          const alive = await orca(['terminal', 'read', '--terminal', handle, '--limit', '10'])
           const status = alive.data?.result?.terminal?.status
           if (alive.code !== 0 || (status && status !== 'running')) {
             throw new Error(`terminal died before writing a report (${handle}, status=${status ?? 'unreadable'})`)
           }
+          const tail = alive.data?.result?.terminal?.tail ?? []
+          if (!bannerChecked) {
+            bannerChecked = true
+            if (!JSON.stringify(tail).includes(spec.model)) {
+              this.journal({ kind: 'banner_unproven', id, model: spec.model })
+            }
+          }
+          if (dismissals < 2 && /trust the (contents|files)|Yes, continue|Press enter to continue/i.test(JSON.stringify(tail.slice(-2)))) {
+            dismissals += 1
+            this.journal({ kind: 'trust_dialog_dismissed', id, dismissals })
+            await orca(['terminal', 'send', '--terminal', handle, '--text', '', '--enter'])
+            continue
+          }
+          // The 15s probe never nudges: a booting TUI reads as idle while the
+          // positional kickoff has not registered yet.
           const idle = await orca(['terminal', 'wait', '--terminal', handle, '--for', 'tui-idle', '--timeout-ms', '1000'], { timeoutMs: 11_000 })
           const isIdle = idle.code === 0 && !JSON.stringify(idle.data ?? '').includes('"satisfied":false')
-          if (isIdle) {
+          if (isIdle && cycles >= 20) {
             if (idleNudges >= 2) {
               this.journal({ kind: 'agent_idle_no_report', id, handle, idleNudges })
               throw new Error(`agent went idle without writing a report, ${idleNudges} reminders ignored (terminal kept: ${handle})`)
@@ -429,7 +454,7 @@ class Run {
             idleNudges += 1
             this.journal({ kind: 'idle_nudge', id, idleNudges })
             await orca(['terminal', 'send', '--terminal', handle, '--text',
-              `You stopped without writing your report file. It is your only completion signal: write the complete content to ${reportPath}.tmp, then rename that file to ${reportPath}.`,
+              `Read the file ${promptPath} and do exactly what it says. Your report file ${reportPath} does not exist yet; it is your only completion signal, so write the complete content to ${reportPath}.tmp and rename that file to ${reportPath}.`,
               '--enter'])
           }
         }
@@ -470,9 +495,18 @@ class Run {
     this.say(`  ✔ ${id} ${label}`)
     if (this.opts.keepTerminals) return
     this.openTerminals.delete(handle)
-    const res = await orca(['terminal', 'close', '--terminal', handle])
+    const gone = (r) => /tab_not_found|handle_stale/.test(r.raw ?? '')
+    let res = await orca(['terminal', 'close', '--terminal', handle])
+    if (res.code !== 0 && !gone(res)) {
+      await sleep(3000)
+      res = await orca(['terminal', 'close', '--terminal', handle])
+    }
     if (res.code === 0) {
       this.journal({ kind: 'terminal_closed', id, handle })
+    } else if (gone(res)) {
+      // The tab already closed itself (command exited, or a human closed it):
+      // the goal state, not a failure.
+      this.journal({ kind: 'terminal_already_gone', id, handle })
     } else {
       this.journal({ kind: 'terminal_close_failed', id, handle, detail: res.raw?.slice(0, 200) })
       this.say(`  ⚠ ${id}: terminal ${handle} did not close; close it in Orca or run cleanup ${this.id}`)
