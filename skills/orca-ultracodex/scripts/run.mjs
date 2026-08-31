@@ -120,7 +120,9 @@ const MODEL_ALIASES = {
 
 // Launch policy (enforced, not advisory):
 // - the codex side runs gpt-5.6-sol only; any other codex model is rejected.
-// - codex effort band is medium..xhigh; `low` clamps up, `max` clamps down.
+// - codex effort band is medium..xhigh; `low` clamps up, `max` clamps down,
+//   and an omitted effort runs medium, so an author who wants xhigh has to
+//   ask for it on that agent.
 // - agents whose label or phase reads as review/verification/judging always
 //   run xhigh.
 // - the service tier is never set: priority ("fast") runs are off-policy.
@@ -140,7 +142,7 @@ export function spawnCommandFor(model, effort, { label = '', phase = '', onPolic
   if (effort !== undefined && !EFFORT_ORDER.includes(effort)) {
     throw new Error(`invalid effort: ${effort}`)
   }
-  let eff = effort ?? 'xhigh'
+  let eff = effort ?? 'medium'
   if (eff === 'low') {
     eff = 'medium'
     onPolicy('effort_clamped', { from: 'low', to: 'medium' })
@@ -360,7 +362,7 @@ class Run {
     if (created.code !== 0 || !handle) throw new Error(`terminal create failed: ${created.raw?.slice(0, 300)}`)
     this.openTerminals.add(handle)
     this.journal({ kind: 'agent_spawned', id, label, phase, handle, worktree, command: spec.cmd })
-    this.say(`  ▸ ${id} ${label} [${spec.model}] ${handle}`)
+    this.say(`  ▸ ${id} ${label} [${spec.model}${spec.effort ? ' ' + spec.effort : ''}] ${handle}`)
 
     // Boot in slices, dismissing the first-run trust dialog if one appears
     // (codex and claude both show one for a fresh directory, and every new

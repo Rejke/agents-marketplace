@@ -32,13 +32,20 @@ Deltas from the Workflow tool:
   work with `--max-agents` (the cap throws, like a budget) and plain counters.
 - `opts.model`: aliases `sol`, `fable`, `opus`, `sonnet`, `haiku`, or a full claude
   model id. The codex side is `gpt-5.6-sol` only; the runner rejects any other codex
-  model. Default `gpt-5.6-sol` at `xhigh`; `opts.effort` reaches codex only.
-- Effort policy, which the runner enforces and journals as `launch_policy` events:
-  the band is `medium`..`xhigh` (`low` clamps up to `medium`, `max` clamps down to
-  `xhigh`). Pick `medium` for mechanical stages and `xhigh` for hard ones. An agent
-  whose label or phase reads as review, verification, or judging runs `xhigh` no
-  matter what the script asked. The runner never sets a service tier; every run is
-  normal priority.
+  model. Default model `gpt-5.6-sol`; `opts.effort` reaches codex only.
+- Effort is a per-agent decision, and the price ladder is steep, so match it to the
+  work: `medium` for mechanical stages (edits from a clear spec, recon, extraction,
+  file sweeps, running checks), `high` for implementation with real design choices
+  or debugging, `xhigh` for architecture-grade reasoning only. An omitted
+  `opts.effort` runs `medium`. Review, verification, and judging agents run `xhigh`
+  whatever the script asked (the runner forces it), so implementation stages stay
+  cheap while the gate stays sharp. In a well-authored script most agents run
+  `medium` or `high` and the `xhigh` ones can each justify themselves; audit any
+  draft where every agent asks for `xhigh`.
+- The runner enforces the band `medium`..`xhigh` (`low` clamps up, `max` clamps
+  down), journals every coercion as a `launch_policy` event, and shows each agent's
+  effort in its spawn line. It never sets a service tier; every run is normal
+  priority.
 - `opts.isolation: 'worktree'` creates a real Orca worktree off the current branch
   (uncommitted changes stay behind) and leaves it after the run for you to handle.
 - The runner ignores `opts.agentType`; `workflow()` takes a script path (one nesting
