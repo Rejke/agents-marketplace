@@ -265,6 +265,17 @@ class Run {
     // One banner line always lands on stderr before any work, so a run that
     // produces nothing is distinguishable from a run that never started.
     this.say(`orca-ultracodex ${this.id}${this.echo ? ' (echo mode)' : ''} | run dir: ${this.dir}`)
+    // An interrupted runner must not orphan its agents' terminals.
+    process.once('SIGINT', () => this.abort('SIGINT'))
+    process.once('SIGTERM', () => this.abort('SIGTERM'))
+  }
+
+  async abort(signal) {
+    const handles = [...this.openTerminals]
+    this.say(`${signal}: closing ${handles.length} agent terminal(s)`)
+    this.journal({ kind: 'run_interrupted', signal, openTerminals: handles })
+    await Promise.all(handles.map((h) => orca(['terminal', 'close', '--terminal', h])))
+    process.exit(130)
   }
 
   journal(event) {
@@ -381,17 +392,24 @@ class Run {
     const sent = await orca(['terminal', 'send', '--terminal', handle, '--text', pointer, '--enter'])
     if (sent.code !== 0) throw new Error(`prompt delivery failed: ${sent.raw?.slice(0, 200)}`)
 
-    // Collect: poll the report file; liveness-check the terminal occasionally.
+    // Collect: poll the report file. Once a minute, probe the terminal: a dead
+    // one fails the agent, and an idle one without a report gets a reminder to
+    // write the file (an agent that answered into its chat instead of the file
+    // looks finished while the runner would otherwise wait out the full
+    // timeout). Two ignored reminders fail the agent early.
     const deadline = Date.now() + this.opts.agentTimeoutMs
     let repairs = 0
+    let cycles = 0
+    let idleNudges = 0
     while (true) {
       if (Date.now() > deadline) {
         this.journal({ kind: 'agent_timeout', id, handle })
         throw new Error(`timed out after ${Math.round(this.opts.agentTimeoutMs / 1000)}s (terminal kept: ${handle})`)
       }
       await sleep(3000)
+      cycles += 1
       if (!fs.existsSync(reportPath)) {
-        if (Math.random() < 0.1) {
+        if (cycles % 20 === 0) {
           // `terminal show` answers ok even for closed terminals; `read` with a
           // live status is the reliable liveness probe.
           const alive = await orca(['terminal', 'read', '--terminal', handle, '--limit', '1'])
@@ -399,12 +417,25 @@ class Run {
           if (alive.code !== 0 || (status && status !== 'running')) {
             throw new Error(`terminal died before writing a report (${handle}, status=${status ?? 'unreadable'})`)
           }
+          const idle = await orca(['terminal', 'wait', '--terminal', handle, '--for', 'tui-idle', '--timeout-ms', '1000'], { timeoutMs: 11_000 })
+          const isIdle = idle.code === 0 && !JSON.stringify(idle.data ?? '').includes('"satisfied":false')
+          if (isIdle) {
+            if (idleNudges >= 2) {
+              this.journal({ kind: 'agent_idle_no_report', id, handle, idleNudges })
+              throw new Error(`agent went idle without writing a report, ${idleNudges} reminders ignored (terminal kept: ${handle})`)
+            }
+            idleNudges += 1
+            this.journal({ kind: 'idle_nudge', id, idleNudges })
+            await orca(['terminal', 'send', '--terminal', handle, '--text',
+              `You stopped without writing your report file. It is your only completion signal: write the complete content to ${reportPath}.tmp, then rename that file to ${reportPath}.`,
+              '--enter'])
+          }
         }
         continue
       }
       const rawReport = fs.readFileSync(reportPath, 'utf8')
       if (!agentOpts.schema) {
-        this.#settle(id, label, handle, { textBytes: rawReport.length })
+        await this.#settle(id, label, handle, { textBytes: rawReport.length })
         return rawReport.trim()
       }
       let value
@@ -416,7 +447,7 @@ class Run {
         errors = ['$: not valid JSON']
       }
       if (errors.length === 0) {
-        this.#settle(id, label, handle, { report: reportPath })
+        await this.#settle(id, label, handle, { report: reportPath })
         return value
       }
       if (repairs >= 1) {
@@ -432,12 +463,17 @@ class Run {
     }
   }
 
-  #settle(id, label, handle, extra) {
+  async #settle(id, label, handle, extra) {
     this.journal({ kind: 'agent_done', id, label, ...extra })
     this.say(`  ✔ ${id} ${label}`)
-    if (!this.opts.keepTerminals) {
-      this.openTerminals.delete(handle)
-      orca(['terminal', 'close', '--terminal', handle]).catch(() => {})
+    if (this.opts.keepTerminals) return
+    this.openTerminals.delete(handle)
+    const res = await orca(['terminal', 'close', '--terminal', handle])
+    if (res.code === 0) {
+      this.journal({ kind: 'terminal_closed', id, handle })
+    } else {
+      this.journal({ kind: 'terminal_close_failed', id, handle, detail: res.raw?.slice(0, 200) })
+      this.say(`  ⚠ ${id}: terminal ${handle} did not close; close it in Orca or run cleanup ${this.id}`)
     }
   }
 }
@@ -510,6 +546,46 @@ async function runScript(file, runnerOpts, callerArgs, depth = 0) {
   return result
 }
 
+// ---------------------------------------------------------------- cleanup
+
+async function cleanupRun(ref, { force = false } = {}) {
+  if (!ref) throw new Error('usage: run.mjs cleanup <runId-or-runDir> [--force]')
+  const dir = ref.includes('/')
+    ? path.resolve(ref)
+    : path.join(process.env.TMPDIR ?? '/tmp', 'orca-ultracodex', 'runs', ref)
+  const lines = fs
+    .readFileSync(path.join(dir, 'journal.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => {
+      try { return JSON.parse(line) } catch { return {} }
+    })
+  const spawned = new Map()
+  const closed = new Set()
+  let settled = false
+  for (const e of lines) {
+    if (e.kind === 'agent_spawned' && e.handle) spawned.set(e.handle, e.id)
+    if (e.kind === 'terminal_closed' && e.handle) closed.add(e.handle)
+    if (e.kind === 'run_done' || e.kind === 'run_interrupted') settled = true
+  }
+  if (!settled && !force) {
+    throw new Error(
+      `${dir} has no run_done/run_interrupted marker, so its runner may still be ` +
+        'alive and its agents mid-work; pass --force only after checking `ps` for run.mjs',
+    )
+  }
+  const results = []
+  for (const [handle, id] of spawned) {
+    if (closed.has(handle)) {
+      results.push({ id, handle, state: 'already_closed' })
+      continue
+    }
+    const res = await orca(['terminal', 'close', '--terminal', handle])
+    results.push({ id, handle, state: res.code === 0 ? 'closed' : 'gone_or_failed' })
+  }
+  process.stdout.write(JSON.stringify({ runDir: dir, results }, null, 2) + '\n')
+}
+
 // ---------------------------------------------------------------- main
 
 // argv[1] can be a symlink (the standard install layout) while Node's ESM
@@ -526,9 +602,14 @@ try {
 }
 if (invokedDirectly) {
   try {
-    const opts = parseArgv(process.argv.slice(2))
-    const result = await runScript(opts.script, opts, opts.args)
-    process.stdout.write(JSON.stringify(result ?? null, null, 2) + '\n')
+    const argv = process.argv.slice(2)
+    if (argv[0] === 'cleanup') {
+      await cleanupRun(argv[1], { force: argv.includes('--force') })
+    } else {
+      const opts = parseArgv(argv)
+      const result = await runScript(opts.script, opts, opts.args)
+      process.stdout.write(JSON.stringify(result ?? null, null, 2) + '\n')
+    }
   } catch (err) {
     process.stderr.write(`run failed: ${err?.message ?? err}\n`)
     process.exit(1)

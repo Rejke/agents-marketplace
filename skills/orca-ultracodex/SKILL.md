@@ -67,6 +67,10 @@ node <this skill's directory>/scripts/run.mjs run <script.js> \
 - Terminals close as each agent settles. A failed or timed-out agent's terminal stays
   open for inspection, and its handle is in the journal and the closing summary. The
   human can watch or type into any live agent tab in Orca.
+- An agent that goes idle without writing its report file gets two reminders, then
+  fails early. Ctrl-C closes every spawned terminal before the runner exits; after a
+  crash or kill -9, `run.mjs cleanup <runId>` closes what the run left behind (a run
+  without a finished marker needs `--force`, so a live run stays safe).
 - `ORCA_ULTRACODEX_ECHO=1` makes `agent()` echo its prompt back (schema calls return
   null), so the whole script runs without touching Orca or spending quota. Debug
   orchestration logic there first.
