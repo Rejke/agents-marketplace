@@ -76,10 +76,17 @@ node <this skill's directory>/scripts/run.mjs run <script.js> \
 - Terminals close as each agent settles. A failed or timed-out agent's terminal stays
   open for inspection, and its handle is in the journal and the closing summary. The
   human can watch or type into any live agent tab in Orca.
-- An agent that goes idle without writing its report file gets two reminders, then
-  fails early. Ctrl-C closes every spawned terminal before the runner exits; after a
-  crash or kill -9, `run.mjs cleanup <runId>` closes what the run left behind (a run
-  without a finished marker needs `--force`, so a live run stays safe).
+- A visibly working agent (its TUI shows Working / esc to interrupt) is never nudged:
+  web research and long thinking write nothing to the terminal for minutes, which the
+  idle detector alone misreads. An agent that sits idle without a report gets two
+  spaced reminders to write the file; after that the runner just keeps waiting for
+  the report, the atomic completion signal. `--agent-timeout` is the only hard stop,
+  so size it to the task: a research-heavy `medium` agent can need far more than the
+  1800s default. A timed-out agent's terminal stays open and its report path stays
+  valid, so late work can still be collected by hand.
+- Ctrl-C closes every spawned terminal before the runner exits; after a crash or
+  kill -9, `run.mjs cleanup <runId>` closes what the run left behind (a run without a
+  finished marker needs `--force`, so a live run stays safe).
 - `ORCA_ULTRACODEX_ECHO=1` makes `agent()` echo its prompt back (schema calls return
   null), so the whole script runs without touching Orca or spending quota. Debug
   orchestration logic there first.

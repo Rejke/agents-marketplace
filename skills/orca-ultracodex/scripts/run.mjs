@@ -405,12 +405,22 @@ class Run {
     // trust dialog (claude still shows one per fresh directory), checks the
     // boot banner once, and reminds an idle agent without a report to write
     // the file (an agent that answered into its chat looks finished while the
-    // runner would otherwise wait out the full timeout). Two ignored reminders
-    // fail the agent early.
+    // runner would otherwise wait out the full timeout).
+    //
+    // Idle is decided from the screen first: a TUI showing "Working" or "esc
+    // to interrupt" is busy no matter what the idle detector says, because
+    // web research and long thinking write nothing to the terminal for
+    // minutes and Orca's tui-idle reads that silence as idle (two medium-Sol
+    // runs were falsely failed this way while visibly working). A nudge needs
+    // two consecutive idle probes; after two ignored nudges the runner stops
+    // nudging and keeps waiting for the report file, because the report is
+    // the atomic completion signal and --agent-timeout is the only hard stop.
     const deadline = Date.now() + this.opts.agentTimeoutMs
     let repairs = 0
     let cycles = 0
     let idleNudges = 0
+    let idleStreak = 0
+    let nudgesExhausted = false
     let dismissals = 0
     let bannerChecked = false
     while (true) {
@@ -442,21 +452,34 @@ class Run {
             await orca(['terminal', 'send', '--terminal', handle, '--text', '', '--enter'])
             continue
           }
-          // The 15s probe never nudges: a booting TUI reads as idle while the
-          // positional kickoff has not registered yet.
-          const idle = await orca(['terminal', 'wait', '--terminal', handle, '--for', 'tui-idle', '--timeout-ms', '1000'], { timeoutMs: 11_000 })
-          const isIdle = idle.code === 0 && !JSON.stringify(idle.data ?? '').includes('"satisfied":false')
-          if (isIdle && cycles >= 20) {
-            if (idleNudges >= 2) {
-              this.journal({ kind: 'agent_idle_no_report', id, handle, idleNudges })
-              throw new Error(`agent went idle without writing a report, ${idleNudges} reminders ignored (terminal kept: ${handle})`)
-            }
-            idleNudges += 1
-            this.journal({ kind: 'idle_nudge', id, idleNudges })
-            await orca(['terminal', 'send', '--terminal', handle, '--text',
-              `Read the file ${promptPath} and do exactly what it says. Your report file ${reportPath} does not exist yet; it is your only completion signal, so write the complete content to ${reportPath}.tmp and rename that file to ${reportPath}.`,
-              '--enter'])
+          // The 15s probe never judges idleness: a booting TUI reads as idle
+          // while the positional kickoff has not registered yet.
+          if (cycles < 20) continue
+          if (/esc to interrupt|working \(/i.test(JSON.stringify(tail.slice(-3)))) {
+            idleStreak = 0
+            continue
           }
+          const idle = await orca(['terminal', 'wait', '--terminal', handle, '--for', 'tui-idle', '--timeout-ms', '1000'], { timeoutMs: 11_000 })
+          if (!(idle.code === 0 && !JSON.stringify(idle.data ?? '').includes('"satisfied":false'))) {
+            idleStreak = 0
+            continue
+          }
+          idleStreak += 1
+          if (idleStreak < 2) continue
+          if (idleNudges >= 2) {
+            if (!nudgesExhausted) {
+              nudgesExhausted = true
+              this.journal({ kind: 'idle_nudges_exhausted', id, handle })
+              this.say(`  ⏳ ${id}: looks idle with no report after ${idleNudges} reminders; waiting for ${reportPath} until the timeout`)
+            }
+            continue
+          }
+          idleNudges += 1
+          idleStreak = 0
+          this.journal({ kind: 'idle_nudge', id, idleNudges })
+          await orca(['terminal', 'send', '--terminal', handle, '--text',
+            `Read the file ${promptPath} and do exactly what it says. Your report file ${reportPath} does not exist yet; it is your only completion signal, so write the complete content to ${reportPath}.tmp and rename that file to ${reportPath}.`,
+            '--enter'])
         }
         continue
       }
