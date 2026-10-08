@@ -34,9 +34,14 @@
    in recent pull requests before deciding. Its description names its jobs in
    one sentence. When the agents' UI is the complaint, follow [ui.md](ui.md).
 
-7. **Prune memory** per [memory.md](memory.md).
+7. **Shrink what agents must read.** List source files over 1,000 lines; agents
+   fail far more often in long files. Add the size gate from
+   [the tools table](SKILL.md#tools), and plan splits of the largest product
+   files as their own pull requests.
 
-8. **Guard against sediment.** Install the path check on every commit. Prove
+8. **Prune memory** per [memory.md](memory.md).
+
+9. **Guard against sediment.** Install the path check on every commit. Prove
    moved rules survived with a script that compares bullets after normalising
    whitespace. Run lint, format and tests, review the diff, and open a pull
    request listing what each tool now holds.

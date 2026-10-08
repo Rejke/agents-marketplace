@@ -71,6 +71,7 @@ prohibition only as a hard guardrail.
 | An action whose one occurrence is a disaster an instruction cannot make rare enough | PreToolUse hook; it costs a process on every call and its false positives block real work, so prefer an instruction naming the safe way |
 | Formatting and auto-fixable lint | PostToolUse hook on the written file only, [templates/format-edited.mjs](templates/format-edited.mjs); unfixable errors go back to the agent |
 | A secret stays out of frames, logs and transcripts | a test asserting it is absent |
+| Files stay small enough to read whole | the format-on-write hook tells the agent when it writes a file past ~1,000 lines; split the largest along existing seams, each test file with its source |
 | Instructions name paths that exist | [templates/check-instructions.ts](templates/check-instructions.ts) on every commit |
 
 Outside tools worth running once: [tools.md](tools.md). Why this works, for a

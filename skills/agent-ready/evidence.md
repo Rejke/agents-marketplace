@@ -25,3 +25,10 @@
 - **Independent review catches bugs.** OpenAI reviews every pull request with
   Codex; Cognition runs Devin Review on every PR. Count your own: in one
   project 8 of 27 independent verdicts were FAIL, each a real bug.
+- **Long files hurt.** On real C patch tasks, files agents failed on averaged
+  about 4,340 lines against about 690 for solved ones (arXiv 2604.23340);
+  repair success falls past ~100-line functions (arXiv 2506.13186).
+- **Measuring a change.** A paired A/B over ~15 past pull requests, 3 runs per
+  arm in separate worktrees, with `claude -p --output-format json`: at that size
+  cost, turns and rule violations show a difference; success rates of a few
+  points do not.

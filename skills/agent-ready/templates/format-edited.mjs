@@ -1,7 +1,7 @@
 // PostToolUse(Edit|Write): format and lint-fix only the file just written, so shared checkouts stay untouched.
 // Template: replace node_modules/.bin/vp, `fmt` and `lint --fix` with the project's formatter and linter.
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
 let input = "";
@@ -23,6 +23,16 @@ process.stdin.on("end", () => {
     encoding: "utf8",
     env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0" },
   });
+  const lines = readFileSync(file, "utf8").split("\n").length;
+  if (lines > 1000 && !/\.test\.[jt]sx?$/.test(path))
+    process.stdout.write(
+      JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: "PostToolUse",
+          additionalContext: `${path} is ${lines} lines; agents edit long files less reliably, so put new code in a new module along a seam instead of growing this one.`,
+        },
+      }),
+    );
   if (lint.status !== 0) {
     const report = `${lint.stdout}${lint.stderr}`
       .split("\n")
