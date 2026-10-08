@@ -69,6 +69,7 @@ prohibition only as a hard guardrail.
 | Only one module writes some data | custom lint rule, [templates/lint-rules.mjs](templates/lint-rules.mjs) |
 | A pattern banned where a better one exists (polling where pushes exist) | custom lint rule on the AST shape |
 | An action that must never run (kill by pattern, force push) | PreToolUse hook, [templates/no-pattern-kill.mjs](templates/no-pattern-kill.mjs) |
+| Formatting and auto-fixable lint | PostToolUse hook on the written file only, [templates/format-edited.mjs](templates/format-edited.mjs); unfixable errors go back to the agent |
 | A secret stays out of frames, logs and transcripts | a test asserting it is absent |
 | Instructions name paths that exist | [templates/check-instructions.ts](templates/check-instructions.ts) on every commit |
 
