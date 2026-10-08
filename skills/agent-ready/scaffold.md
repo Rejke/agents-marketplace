@@ -19,9 +19,9 @@ small: every line added later should answer a mistake an agent actually made.
    (`ln -s AGENTS.md CLAUDE.md`). Done when it is under ~80 lines.
 
 4. **Hold boundaries in tools** per [the tools table](SKILL.md#tools), starting
-   from [templates/lint-rules.mjs](templates/lint-rules.mjs) and
-   [templates/no-pattern-kill.mjs](templates/no-pattern-kill.mjs) with
-   [templates/settings.json](templates/settings.json). Prove each _red_ on a
+   from [templates/lint-rules.mjs](templates/lint-rules.mjs), and add the
+   format-on-write hook ([templates/format-edited.mjs](templates/format-edited.mjs),
+   [templates/settings.json](templates/settings.json)). Prove each _red_ on a
    throwaway sample, green on the repository.
 
 5. **Add the path check:** copy

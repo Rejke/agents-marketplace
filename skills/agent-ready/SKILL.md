@@ -68,7 +68,7 @@ prohibition only as a hard guardrail.
 | A layer must not import another | `no-restricted-imports` with patterns, per directory |
 | Only one module writes some data | custom lint rule, [templates/lint-rules.mjs](templates/lint-rules.mjs) |
 | A pattern banned where a better one exists (polling where pushes exist) | custom lint rule on the AST shape |
-| An action that must never run (kill by pattern, force push) | PreToolUse hook, [templates/no-pattern-kill.mjs](templates/no-pattern-kill.mjs) |
+| An action whose one occurrence is a disaster an instruction cannot make rare enough | PreToolUse hook; it costs a process on every call and its false positives block real work, so prefer an instruction naming the safe way |
 | Formatting and auto-fixable lint | PostToolUse hook on the written file only, [templates/format-edited.mjs](templates/format-edited.mjs); unfixable errors go back to the agent |
 | A secret stays out of frames, logs and transcripts | a test asserting it is absent |
 | Instructions name paths that exist | [templates/check-instructions.ts](templates/check-instructions.ts) on every commit |
