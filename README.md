@@ -32,3 +32,7 @@ It covers:
 - Voice rules so the edited text still reads like a person wrote it
 
 If you had `orwell-writing` or `unslop` installed, remove them after you install this one. Keeping them recreates the conflict this skill fixes.
+
+### agent-ready
+
+A way of judging a repository for coding agents rather than a checklist. It teaches the agent eight principles: load is cost, the code is the source of truth, tools hold and prose explains, feedback beats instruction, copyable code, one source of truth, decisions stay the person's, evidence before belief. From those it looks for what hurts agents and what is missing, then cuts, enforces or introduces the smallest set of changes. User-invoked: run it as `/agent-ready` or `$agent-ready`.
