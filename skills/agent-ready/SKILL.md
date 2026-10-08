@@ -1,78 +1,99 @@
 ---
 name: agent-ready
-description: Scaffold or optimize a repository's agent instructions, docs, skills and memory, holding every rule a tool can hold in lint, hooks or checks.
+description: Judge what in a repository helps or hurts coding agents, and what to cut, enforce or introduce so they work well in it.
 disable-model-invocation: true
 ---
 
 # Agent-ready
 
-An agent's output degrades with the text it carries. Every always-loaded line
-spends tokens and attention on every turn, and prose that restates the code goes
-stale while agents keep obeying it. The work is subtraction plus enforcement:
-leave to the code what the agent finds by looking, hold in tools what must hold,
-and keep in prose only what neither can say.
+An agent works from what it can see and what it can check. It obeys every line
+it carries, copies the nearest code, and believes a result it never looked at.
+Make the right thing the visible, easy and checked thing, and spend the agent's
+attention only where the repository cannot speak for itself.
 
-When `writing-for-agents` is installed, read it first: it governs every line
-you write here.
+## Principles
 
-**Pick the path:**
+**Load is cost.** Every always-loaded line (root instructions, skill
+descriptions, rules, the memory index) spends tokens and attention on every
+turn, and adherence falls as the pile grows. A line earns its place when you can
+name the mistake its absence would cause. Material only some tasks need sits
+behind a pointer whose wording says when to follow it.
 
-- No agent instructions yet, or only a generated file → [scaffold.md](scaffold.md).
-- Existing instructions, docs, skills or memory → [optimize.md](optimize.md).
+**The code is the source of truth.** Prose that restates code, config, scripts
+or `--help` is a cache: it goes stale and is still obeyed. Keep in prose what
+the code cannot say: the boundary a change elsewhere can cross unseen, the
+gotcha no config confesses, the reason behind a choice, the unusual command.
+History (dated decisions, measurements, finished audits) lives in Git.
 
-Then follow that file's steps; both use the reference below.
+**Tools hold, prose explains.** When breaking a rule should fail, a tool holds
+it: a lint rule, a test, a check on commit. The error message carries the why;
+the prose keeps one line or none. A hook that blocks an action costs a process
+on every call and its false positives stop real work, so it is for disasters an
+instruction cannot make rare enough; an instruction naming the safe way covers
+the rest.
 
-## Line classes
+**Feedback beats instruction.** Agents get right what they can check quickly.
+Shorten the loop: format and lint on write, with what is left handed back; the
+nearest test run after an edit; one pass through the running product, as its
+user; for anything visible, before and after side by side against a short
+checklist. A second agent reviews where the history shows reviews catching
+bugs; count the failures in past reviews before deciding.
 
-- **Cache**: restates the environment (scripts, config, layout, `--help`).
-  Delete, unless the lookup is expensive.
-- **Code description**: how a module works. Delete; the code says it and stays
-  current.
-- **History**: dated decisions, incident stories, measurements, resolved
-  audits. Delete; Git keeps them.
-- **Duplicate**: one meaning in two places. Keep one source of truth and point
-  to it.
-- **No-op**: what the model already does ("write clean code"). Delete the whole
-  sentence.
-- **Contradiction**: two places disagree. Resolve by the higher authority
-  (requirements over looks, the person's explicit rule over a derived one); with
-  none, ask the person.
-- **Boundary**: a line a change elsewhere can cross without seeing it ("only X
-  writes this table", "the password never reaches a log"). Keep one line, and
-  move it into a tool when one can hold it.
-- **Gotcha**: the trap no config confesses (a class name one step off the
-  library's default, a script that ships the dirty tree). Keep one line beside
-  what it concerns.
+**Copyable code.** The nearest code is the strongest instruction. One canonical
+way per job (a component, a helper, a pattern), so whatever an agent copies is
+right. Long files are where agents fail most: split hot spots along real seams,
+the most-changed first.
 
-## The root
+**One source of truth, one owner.** Each meaning lives in one place, and every
+other place points to it. A rule every agent needs lives in the repository;
+private memory keeps only one agent's preferences and context. Each document
+owns one subject. Two places that disagree are resolved by the higher authority
+(requirements over looks, the person's explicit rule over a derived one), or by
+asking.
 
-One file, `AGENTS.md`, with `CLAUDE.md` a relative symlink to it:
+**Decisions stay the person's.** Taste, policy, what a screen is for, what
+ships: the agent proposes, with evidence and options; the person decides, and
+the decision is recorded where the next agent will read it.
 
-1. The product and its user, one paragraph.
-2. Principles where the product judges differently from the default, each led
-   by one word.
-3. Boundaries, one line each, naming the owner; one sentence says which ones
-   lint holds.
-4. Finishing work: the exact test, lint, format and type commands, the verify
-   skill, who reviews, what a delivering reply leads with.
-5. Safety rails: live targets, destructive commands, process kills.
-6. One pointer to where the rules for editing these files live.
+**Evidence before belief.** Check an auditor's claim against the code before
+acting on it; a bad search reads as rot. Prove a new rule red on a planted
+violation and green on the repository. When a change's value is in doubt,
+measure it: the same tasks with and without, cost and turns per run.
 
-Under ~120 lines. Positive phrasing: state the target behaviour, and keep a
-prohibition only as a hard guardrail.
+## What to look for
 
-## Tools
+- The always-loaded total, and the largest contributors.
+- Instruction lines that describe code, repeat a doc, date a decision, or say
+  what the model does anyway.
+- Two places disagreeing; a rule only one agent's memory holds.
+- Rules stated in prose that a tool could hold, and tools that block more than
+  they prevent.
+- How long the check loop takes, and whether the agent ever sees its result.
+- Files past ~1,000 lines, and how often they change.
+- Several ways of doing one job in the code; words in a design doc that map to
+  nothing in it.
+- A verify process built from per-feature recipes instead of tests, one real
+  pass and a look.
 
-| Rule kind | Tool |
-| --- | --- |
-| A layer must not import another | `no-restricted-imports` with patterns, per directory |
-| Only one module writes some data | custom lint rule, [templates/lint-rules.mjs](templates/lint-rules.mjs) |
-| A pattern banned where a better one exists (polling where pushes exist) | custom lint rule on the AST shape |
-| An action whose one occurrence is a disaster an instruction cannot make rare enough | PreToolUse hook; it costs a process on every call and its false positives block real work, so prefer an instruction naming the safe way |
-| Formatting and auto-fixable lint | PostToolUse hook on the written file only, [templates/format-edited.mjs](templates/format-edited.mjs); unfixable errors go back to the agent |
-| A secret stays out of frames, logs and transcripts | a test asserting it is absent |
-| Files stay small enough to read whole | the format-on-write hook tells the agent when it writes a file past ~1,000 lines; split the largest along existing seams, each test file with its source |
-| Instructions name paths that exist | [templates/check-instructions.ts](templates/check-instructions.ts) on every commit |
+## What to introduce where missing
 
-Outside tools worth running once: [tools.md](tools.md). Why this works, for a
-person who asks: [evidence.md](evidence.md).
+- A short root `AGENTS.md` (with `CLAUDE.md` linked to it): the product and its
+  user, principles the product judges differently, boundaries one line each,
+  the exact check commands, safety rails.
+- A check that fails when instructions or docs name a path that no longer
+  exists.
+- Format and lint on write, scoped to the written file.
+- Lint rules for the boundaries code can express.
+- A verify skill: tests first, one pass through the real product, a look step,
+  a second agent where it pays.
+- A glossary when the domain's words are not the code's.
+
+## Working
+
+Map what loads and when. Audit by area, one subagent each, and check their
+evidence. Change the smallest set that removes the most load or risk, prove each
+tool red and green, run the repository's checks, and open a pull request that
+says what each tool now holds. Bring decisions that belong to the person to
+them with options, never settle them in the diff.
+
+Why this works, for a person who asks: [evidence.md](evidence.md).
