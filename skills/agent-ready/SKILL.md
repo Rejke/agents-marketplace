@@ -97,3 +97,5 @@ says what each tool now holds. Bring decisions that belong to the person to
 them with options, never settle them in the diff.
 
 Why this works, for a person who asks: [evidence.md](evidence.md).
+
+A self-contained version to paste into any agent: [audit-prompt.md](audit-prompt.md).
